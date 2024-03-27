@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Display, Formatter};
+use std::ops::Mul;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
@@ -17,5 +18,13 @@ impl Display for Expr {
             Expr::S => write!(f, "s"),
             Expr::A(x, y) => write!(f, "`{}{}", x.as_ref(), y.as_ref()),
         }
+    }
+}
+
+impl Mul for Expr {
+    type Output = Expr;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Expr::A(Rc::new(self), Rc::new(rhs))
     }
 }

@@ -2,13 +2,13 @@ mod expr;
 mod parse;
 mod runner;
 
+use crate::parse::parse;
+use crate::runner::Program;
+use clap::Parser;
 use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::process::exit;
-use clap::Parser;
-use crate::parse::parse_lazy_k;
-use crate::runner::Program;
 
 #[derive(Parser, Debug)]
 #[command(about)]
@@ -29,13 +29,13 @@ fn main() -> io::Result<()> {
         file.read_to_end(&mut vec)?;
         vec
     };
-    match parse_lazy_k(&program) {
-        Ok(expr) => {
+    match parse(&program) {
+        Some(expr) => {
             Program::run(&expr);
             Ok(())
-        },
-        Err(e) => {
-            eprintln!("parse error: {}", e);
+        }
+        None => {
+            eprintln!("parse error");
             exit(1)
         }
     }
