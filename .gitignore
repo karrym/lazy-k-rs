@@ -1,0 +1,6 @@
+/*.iml
+/*.svg
+/*.json
+/.idea
+/Cargo.lock
+/target
