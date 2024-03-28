@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 pom = "3"
-clap = { version = "4", features = ["derive"] }
 
 [profile.release]
 debug = true

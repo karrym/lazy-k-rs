@@ -19,7 +19,7 @@ pub enum Graph {
     Free,
 }
 
-pub struct Program {
+pub struct Runner {
     e: Vec<Graph>,
     start: ExprId,
     fresh_id: ExprId,
@@ -36,7 +36,7 @@ const ZERO: ExprId = 4;
 
 const PROGRAM_AREA_END: usize = 5;
 
-impl Program {
+impl Runner {
     fn new() -> Self {
         /*
         let mut hash = HashMap::with_hasher(BuildHasherDefault::<FnvHasher>::default());
@@ -57,6 +57,7 @@ impl Program {
         }
     }
 
+    #[allow(dead_code)]
     pub fn compile(expr: &Expr) -> Self {
         let mut p = Self::new();
         p.start = p.push_expr(expr);

@@ -55,19 +55,16 @@ fn parse_iota_inner(str: &[u8]) -> Result<(Expr, &[u8]), &'static str> {
 }
 
 fn parse_jot(bytes: &[u8]) -> Result<Expr, &'static str> {
-    match bytes.last() {
-        None => Ok(I),
-        Some(b'0') => {
-            let w = parse_jot(&bytes[..bytes.len() - 1])?;
-            Ok(w * S * K)
+    let mut expr = I;
+    for byte in bytes {
+        match byte {
+            b'0' => expr = expr * S * K,
+            b'1' => expr = S * (K * expr),
+            c if is_space(c) => continue,
+            _ => return Err("unknown character"),
         }
-        Some(b'1') => {
-            let w = parse_jot(&bytes[..bytes.len() - 1])?;
-            Ok(S * (K * w))
-        }
-        Some(byte) if is_space(byte) => parse_jot(&bytes[..bytes.len() - 1]),
-        _ => Err("unknown character"),
     }
+    Ok(expr)
 }
 
 fn space<'a>() -> Parser<'a, u8, ()> {
