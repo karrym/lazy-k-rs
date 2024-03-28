@@ -78,6 +78,6 @@ fn main() {
     }).collect::<Result<Vec<_>, _>>().unwrap_or_else(|err| {
         eprintln!("{}", err);
         exit(1)
-    }).into_iter().fold(Expr::I, |f, g| Expr::S * (Expr::K * f) * g);
+    }).into_iter().fold(Expr::I, |f, g| Expr::S * (Expr::K * g) * f);
     Runner::run(&expr);
 }
