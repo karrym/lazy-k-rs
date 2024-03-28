@@ -7,51 +7,9 @@ fn is_space(byte: &u8) -> bool {
     ch.is_whitespace()
 }
 
-pub fn parse_unlambda(str: &[u8]) -> Result<Expr, &'static str> {
-    let (expr, str) = parse_unlambda_inner(str)?;
-    if str.iter().all(is_space) {
-        Ok(expr)
-    } else {
-        Err("unexpected end")
-    }
-}
-
-fn parse_unlambda_inner(str: &[u8]) -> Result<(Expr, &[u8]), &'static str> {
-    match str.first() {
-        None => Err("end of string"),
-        Some(b's') => Ok((S, &str[1..])),
-        Some(b'k') => Ok((K, &str[1..])),
-        Some(b'i') => Ok((I, &str[1..])),
-        Some(b'`') => parse_unlambda_inner(&str[1..])
-            .and_then(|(lhs, str)| parse_unlambda_inner(&str).map(|(rhs, str)| (lhs * rhs, str))),
-        Some(c) if is_space(c) => parse_unlambda_inner(&str[1..]),
-        _ => Err("unknown character"),
-    }
-}
-
-pub fn parse_iota(str: &[u8]) -> Result<Expr, &'static str> {
-    let (expr, str) = parse_iota_inner(str)?;
-    if str.iter().all(is_space) {
-        Ok(expr)
-    } else {
-        Err("unexpected end")
-    }
-}
-
 fn iota() -> Expr {
     use Expr::*;
     S * (S * I * (K * S)) * (K * K)
-}
-
-fn parse_iota_inner(str: &[u8]) -> Result<(Expr, &[u8]), &'static str> {
-    match str.first() {
-        None => Err("end of string"),
-        Some(b'i') => Ok((iota(), &str[1..])),
-        Some(b'*') => parse_iota_inner(&str[1..])
-            .and_then(|(lhs, str)| parse_iota_inner(&str).map(|(rhs, str)| (lhs * rhs, str))),
-        Some(c) if is_space(c) => parse_iota_inner(&str[1..]),
-        _ => Err("unknown character"),
-    }
 }
 
 fn parse_jot(bytes: &[u8]) -> Result<Expr, &'static str> {
@@ -60,37 +18,49 @@ fn parse_jot(bytes: &[u8]) -> Result<Expr, &'static str> {
         match byte {
             b'0' => expr = expr * S * K,
             b'1' => expr = S * (K * expr),
-            c if is_space(c) => continue,
             _ => return Err("unknown character"),
         }
     }
     Ok(expr)
 }
 
-fn space<'a>() -> Parser<'a, u8, ()> {
-    one_of(b" \t\r\n").repeat(0..).discard()
+fn expr_dash<'a>() -> Parser<'a, u8, Expr> {
+    one_of(b"sS").map(|_| S)
+        | one_of(b"kK").map(|_| K)
+        | one_of(b"i").map(|_| I)
+        | (sym(b'`') * call(expr) + call(expr)).map(|(f, g)| f * g)
+        | (sym(b'*') * call(iota_expr) + call(iota_expr)).map(|(f, g)| f * g)
+        | { sym(b'(') * call(cc_expr) - sym(b')') }
 }
 
-fn combinator<'a>() -> Parser<'a, u8, Expr> {
-    (one_of(b"sS").map(|_| S) | one_of(b"kK").map(|_| K) | one_of(b"iI").map(|_| I)) - space()
-}
-
-fn term<'a>() -> Parser<'a, u8, Expr> {
-    combinator() | { sym(b'(') * space() * call(expr) - space() - sym(b')') - space() }
+fn iota_expr<'a>() -> Parser<'a, u8, Expr> {
+    sym(b'i').map(|_| iota()) | expr_dash()
 }
 
 fn expr<'a>() -> Parser<'a, u8, Expr> {
-    (term() + term().repeat(0..)).map(|(t, ts)| ts.into_iter().fold(t, |l, r| l * r))
+    sym(b'i').map(|_| I) | expr_dash()
 }
 
-pub fn parse_combinator(str: &[u8]) -> Result<Expr, &'static str> {
-    (space() * expr() - end())
-        .parse(str)
-        .map_err(|_| "parse error")
+fn cc_expr<'a>() -> Parser<'a, u8, Expr> {
+    (expr() + expr().repeat(0..)).map(|(t, ts)| ts.into_iter().fold(t, |l, r| l * r))
 }
 
-pub fn parse(str: &[u8]) -> Option<Expr> {
-    let functions: [&dyn Fn(&[u8]) -> Result<Expr, &'static str>; 4] =
-        [&parse_combinator, &parse_unlambda, &parse_iota, &parse_jot];
-    functions.iter().filter_map(|f| f(str).ok()).next()
+pub fn parse_expr(str: &[u8]) -> Result<Expr, &'static str> {
+    (cc_expr() - end()).parse(str).map_err(|_| "parse error")
+}
+
+pub fn parse(str: &str) -> Option<Expr> {
+    let code = str
+        .lines()
+        .map(|line| line.as_bytes().iter().take_while(|c| **c != b'#'))
+        .flatten()
+        .filter(|c| !is_space(c))
+        .map(|b| *b)
+        .collect::<Vec<u8>>();
+
+    if code.is_empty() || code[0] == b'0' || code[0] == b'1' {
+        parse_jot(&code).ok()
+    } else {
+        parse_expr(&code).ok()
+    }
 }
