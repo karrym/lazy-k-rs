@@ -1,18 +1,17 @@
 use crate::expr::Expr;
 use std::collections::VecDeque;
-use std::io;
 use std::io::{stdin, stdout, Read, StdinLock, Write};
 use std::mem::size_of;
 
-type ExprId = usize;
+type Addr = usize;
 
 #[derive(Clone, Debug)]
 pub enum Graph {
-    Apply(ExprId, ExprId),
+    Apply(Addr, Addr),
     S,
     K,
     I,
-    Link(ExprId),
+    Link(Addr),
     Inc,
     Num(u16),
     Stdin,
@@ -20,51 +19,37 @@ pub enum Graph {
 }
 
 pub struct Runner {
-    e: Vec<Graph>,
-    start: ExprId,
-    fresh_id: ExprId,
+    memory: Vec<Graph>,
+    fresh_id: Addr,
     input: StdinLock<'static>,
 }
 
-type Stack = Vec<ExprId>;
+type Stack = Vec<Addr>;
 
-const S: ExprId = 0;
-const K: ExprId = 1;
-const I: ExprId = 2;
-const INC: ExprId = 3;
-const ZERO: ExprId = 4;
+const S: Addr = 0;
+const K: Addr = 1;
+const I: Addr = 2;
+const INC: Addr = 3;
+const ZERO: Addr = 4;
 
 const PROGRAM_AREA_END: usize = 5;
 
 impl Runner {
     fn new() -> Self {
-        /*
-        let mut hash = HashMap::with_hasher(BuildHasherDefault::<FnvHasher>::default());
-        hash.extend([(0,Graph::S),(1,Graph::K),(2, Graph::I),(3, Graph::Inc),(4, Graph::Num(0))]);
-         */
         Self {
-            e: vec![
+            memory: vec![
                 Graph::S,
                 Graph::K,
                 Graph::I,
                 Graph::Inc,
                 Graph::Num(0),
-                Graph::Stdin,
             ],
-            start: 6,
-            fresh_id: 6,
+            fresh_id: PROGRAM_AREA_END,
             input: stdin().lock(),
         }
     }
 
-    #[allow(dead_code)]
-    pub fn compile(expr: &Expr) -> Self {
-        let mut p = Self::new();
-        p.start = p.push_expr(expr);
-        p
-    }
-
-    fn push_expr(&mut self, expr: &Expr) -> ExprId {
+    fn push_expr(&mut self, expr: &Expr) -> Addr {
         match expr {
             Expr::I => I,
             Expr::K => K,
@@ -77,7 +62,7 @@ impl Runner {
         }
     }
 
-    fn push_church(&mut self, num: u16) -> ExprId {
+    fn push_church(&mut self, num: u16) -> Addr {
         if num == 0 {
             self.push(Graph::Apply(K, I))
         } else {
@@ -90,7 +75,7 @@ impl Runner {
         }
     }
 
-    pub fn push_cons(&mut self, car: ExprId, cdr: ExprId) -> ExprId {
+    pub fn push_cons(&mut self, car: Addr, cdr: Addr) -> Addr {
         let k_car = self.push(Graph::Apply(K, car));
         let k_cdr = self.push(Graph::Apply(K, cdr));
         let s_i = self.push(Graph::Apply(S, I));
@@ -99,19 +84,19 @@ impl Runner {
         self.push(Graph::Apply(s_car, k_cdr))
     }
 
-    fn spine(&self, mut id: ExprId, stack: &mut Stack) {
+    fn spine(&self, mut id: Addr, stack: &mut Stack) {
         loop {
             id = self.follow_link(id);
             stack.push(id);
-            match &self.e[id] {
+            match &self.memory[id] {
                 Graph::Apply(l, _) => id = *l,
                 _ => break,
             };
         }
     }
 
-    fn get_rhs(&self, expr_id: ExprId) -> ExprId {
-        match &self.e[expr_id] {
+    fn get_rhs(&self, expr_id: Addr) -> Addr {
+        match &self.memory[expr_id] {
             Graph::Apply(_, rhs) => *rhs,
             _ => unreachable!(),
         }
@@ -125,28 +110,28 @@ impl Runner {
     }
      */
 
-    fn push(&mut self, graph: Graph) -> ExprId {
-        for i in self.fresh_id..self.e.len() {
-            if let Graph::Free = self.e[i] {
-                self.e[i] = graph;
-                self.fresh_id = (i + 1) as ExprId;
-                return i as ExprId;
+    fn push(&mut self, graph: Graph) -> Addr {
+        for i in self.fresh_id..self.memory.len() {
+            if let Graph::Free = self.memory[i] {
+                self.memory[i] = graph;
+                self.fresh_id = (i + 1) as Addr;
+                return i as Addr;
             }
         }
-        let id = self.e.len();
-        self.e.push(graph);
-        self.fresh_id = id + 1 as ExprId;
+        let id = self.memory.len();
+        self.memory.push(graph);
+        self.fresh_id = id + 1 as Addr;
         id
     }
 
-    fn follow_link(&self, mut expr: ExprId) -> ExprId {
-        while let Graph::Link(arg1) = self.e[expr] {
+    fn follow_link(&self, mut expr: Addr) -> Addr {
+        while let Graph::Link(arg1) = self.memory[expr] {
             expr = arg1;
         }
         expr
     }
 
-    fn reduce(&mut self, start: ExprId) {
+    fn reduce(&mut self, start: Addr) {
         use Graph::*;
         let mut stack = Vec::new();
         self.spine(start, &mut stack);
@@ -154,7 +139,7 @@ impl Runner {
             //println!("stack depth: {}", stack.len());
             let Some(mut f) = stack.pop() else { break };
             f = self.follow_link(f);
-            match self.e[f] {
+            match self.memory[f] {
                 S => {
                     let Some(r1) = stack.pop() else { break };
                     let Some(r2) = stack.pop() else { break };
@@ -164,20 +149,20 @@ impl Runner {
                     let z = self.get_rhs(r3);
                     let lhs = self.push(Apply(x, z));
                     let rhs = self.push(Apply(y, z));
-                    self.e[r3] = Apply(lhs, rhs);
+                    self.memory[r3] = Apply(lhs, rhs);
                     self.spine(r3, &mut stack);
                 }
                 K => {
                     let Some(r1) = stack.pop() else { break };
                     let Some(r2) = stack.pop() else { break };
                     let x = self.get_rhs(r1);
-                    self.e[r2] = Link(x);
+                    self.memory[r2] = Link(x);
                     self.spine(r2, &mut stack);
                 }
                 I => {
                     let Some(r) = stack.pop() else { break };
                     let x = self.get_rhs(r);
-                    self.e[r] = Link(x);
+                    self.memory[r] = Link(x);
                     self.spine(r, &mut stack);
                 }
                 Inc => {
@@ -185,9 +170,9 @@ impl Runner {
                     let mut n = self.get_rhs(r);
                     self.reduce(n);
                     n = self.follow_link(n);
-                    match &self.e[n] {
+                    match &self.memory[n] {
                         Num(n) => {
-                            self.e[r] = Num(n + 1);
+                            self.memory[r] = Num(n + 1);
                             stack.push(r);
                         }
                         _ => panic!("cannot increment"),
@@ -204,7 +189,7 @@ impl Runner {
                     let church = self.push_church(n);
                     let stdin = self.push(Stdin);
                     let cons = self.push_cons(church, stdin);
-                    self.e[f] = Link(cons);
+                    self.memory[f] = Link(cons);
                     self.spine(f, &mut stack);
                 }
                 ref t => panic!("unreachable: {:?}", &t),
@@ -212,16 +197,16 @@ impl Runner {
         }
     }
 
-    fn garbage_collect(&mut self) {
-        let mut need = vec![false; self.e.len()];
+    fn garbage_collect(&mut self, start: Addr) {
+        let mut need = vec![false; self.memory.len()];
         let mut queue = VecDeque::new();
-        queue.push_front(self.start);
+        queue.push_front(start);
         while let Some(id) = queue.pop_back() {
             if need[id] {
                 continue;
             }
             need[id] = true;
-            match &self.e[id] {
+            match &self.memory[id] {
                 Graph::Apply(l, r) => {
                     queue.push_front(*l);
                     queue.push_front(*r);
@@ -231,25 +216,25 @@ impl Runner {
             }
         }
 
-        for i in PROGRAM_AREA_END..self.e.len() {
+        for i in PROGRAM_AREA_END..self.memory.len() {
             if !need[i] {
-                self.e[i] = Graph::Free;
+                self.memory[i] = Graph::Free;
             }
         }
         self.fresh_id = PROGRAM_AREA_END;
     }
 
-    fn print_expr(&self, id: ExprId, string: &mut String) -> io::Result<()> {
-        match self.e[id] {
+    fn print_expr(&self, id: Addr, string: &mut String) {
+        match self.memory[id] {
             Graph::Apply(x, y) => {
                 string.push('`');
-                self.print_expr(x, string)?;
-                self.print_expr(y, string)?;
+                self.print_expr(x, string);
+                self.print_expr(y, string);
             }
             Graph::S => string.push('s'),
             Graph::K => string.push('k'),
             Graph::I => string.push('i'),
-            Graph::Link(x) => self.print_expr(x, string)?,
+            Graph::Link(x) => self.print_expr(x, string),
             Graph::Inc => string.push_str("<increment>"),
             Graph::Num(n) => {
                 string.push_str("<number:");
@@ -259,34 +244,33 @@ impl Runner {
             Graph::Stdin => string.push_str("<stdin>"),
             Graph::Free => string.push_str("<runtime bug>"),
         }
-        Ok(())
     }
 
-    pub fn print_list(&mut self) {
+    pub fn print_list(&mut self, mut start: Addr) {
         let mut writer = stdout().lock();
         loop {
-            let car = self.push(Graph::Apply(self.start, K));
+            let car = self.push(Graph::Apply(start, K));
 
             let i = self.push(Graph::Apply(car, INC));
             let g = self.push(Graph::Apply(i, ZERO));
             self.reduce(g);
-            match &self.e[g] {
+            match &self.memory[g] {
                 Graph::Num(ch) => {
                     if *ch >= 256 {
                         break;
                     };
                     let _ = writer.write(&[(ch & 0xFF) as u8]);
                     let ki = self.push(Graph::Apply(K, I));
-                    self.start = self.push(Graph::Apply(self.start, ki));
+                    start = self.push(Graph::Apply(start, ki));
                 }
                 _ => {
                     let mut string = String::new();
-                    let _ = self.print_expr(g, &mut string);
+                    self.print_expr(g, &mut string);
                     panic!("cannot reduce to numeric value: {}", string)
                 }
             };
-            if self.e.len() * size_of::<Graph>() > 256 * 1024 * 1024 {
-                self.garbage_collect();
+            if self.memory.len() * size_of::<Graph>() > 256 * 1024 * 1024 {
+                self.garbage_collect(start);
             }
         }
         let _ = writer.flush();
@@ -296,7 +280,7 @@ impl Runner {
         let mut this = Self::new();
         let i = this.push_expr(expr);
         let stdin = this.push(Graph::Stdin);
-        this.start = this.push(Graph::Apply(i, stdin));
-        this.print_list()
+        let start = this.push(Graph::Apply(i, stdin));
+        this.print_list(start)
     }
 }
